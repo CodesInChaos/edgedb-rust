@@ -1,19 +1,20 @@
 use crate::queryable::{Queryable, DescriptorContext, DescriptorMismatch};
 use crate::errors::DecodeError;
 use crate::descriptors::{Descriptor, TypePos};
-use crate::serialization::decode::DecodeTupleLike;
+use crate::serialization::decode_composite::DecodeTupleLike;
+use crate::serialization::{Input, Codec, ScalarCodec};
 
 macro_rules! implement_tuple {
     ( $count:expr, $($name:ident,)+ ) => (
-        impl<$($name:Queryable),+> Queryable for ($($name,)+) {
-            fn decode(buf: &[u8]) -> Result<Self, DecodeError> {
+        impl<'t, $($name:Queryable),+> Codec<'t, ($($name,)+)> for ScalarCodec {
+            fn decode(&self, buf: Input) -> Result<($($name,)+), DecodeError> {
                 let mut elements = DecodeTupleLike::new_tuple(buf, $count)?;
                 Ok((
                     $(elements.decode_element::<$name>()?,)+
                 ))
             }
 
-            fn check_descriptor(ctx: &DescriptorContext, type_pos: TypePos)
+            fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos)
             -> Result<(), DescriptorMismatch>
             {
                 let desc = ctx.get(type_pos)?;

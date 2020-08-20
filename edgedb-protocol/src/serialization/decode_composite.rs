@@ -2,6 +2,7 @@ use crate::queryable::Queryable;
 use crate::errors::{self, DecodeError};
 use snafu::ensure;
 use self::inner::DecodeCompositeInner;
+use crate::serialization::Input;
 
 
 pub struct DecodeTupleLike<'t> {
@@ -9,30 +10,30 @@ pub struct DecodeTupleLike<'t> {
 }
 
 impl<'t> DecodeTupleLike<'t> {
-    fn new(buf:&'t [u8]) -> Result<Self, DecodeError> {
-        let inner = DecodeCompositeInner::read_tuple_like_header(buf)?;
+    fn new(buf:Input<'t>) -> Result<Self, DecodeError> {
+        let inner = DecodeCompositeInner::read_tuple_like_header(buf.bytes()?)?;
         Ok(DecodeTupleLike{inner})
     }
 
-    pub fn new_object(buf:&'t [u8], expected_count:usize) -> Result<Self, DecodeError> {
+    pub fn new_object(buf:Input<'t>, expected_count:usize) -> Result<Self, DecodeError> {
         let elements = Self::new(buf)?;
         ensure!(elements.inner.count() == expected_count, errors::ObjectSizeMismatch);
         Ok(elements)
     }
 
-    pub fn new_tuple(buf:&'t [u8], expected_count:usize) -> Result<Self, DecodeError> {
+    pub fn new_tuple(buf:Input<'t>, expected_count:usize) -> Result<Self, DecodeError> {
         let elements = Self::new(buf)?;
         ensure!(elements.inner.count() == expected_count, errors::TupleSizeMismatch);
         Ok(elements)
     }
 
-    pub fn read(&mut self) -> Result<Option<&[u8]>, DecodeError> {
-        self.inner.read_object_element()
+    pub fn read(&mut self) -> Result<Input, DecodeError> {
+        Ok(Input(self.inner.read_object_element()?))
     }    
 
     pub fn decode_element<T:Queryable>(&mut self) -> Result<T, DecodeError> {
         let element = self.read()?;
-        T::decode_optional(element)
+        T::decode(element)
     }
 
     pub fn skip_element(&mut self) -> Result<(), DecodeError> {
@@ -41,54 +42,54 @@ impl<'t> DecodeTupleLike<'t> {
     }
 }
 
-pub struct DecodeInputTuple<'t> {
+pub(crate) struct DecodeInputTuple<'t> {
     inner:DecodeCompositeInner<'t>
 }
 
 impl<'t> DecodeInputTuple<'t> {
-    fn new(buf:&'t [u8]) -> Result<Self, DecodeError> {    
-        let inner = DecodeCompositeInner::read_tuple_like_header(buf)?;
+    fn new(buf:Input<'t>) -> Result<Self, DecodeError> {    
+        let inner = DecodeCompositeInner::read_tuple_like_header(buf.bytes()?)?;
         Ok(DecodeInputTuple{inner})
     }
 
-    pub fn with_count(buf:&'t [u8], expected_count:usize) -> Result<Self, DecodeError> {
+    pub fn with_count(buf:Input<'t>, expected_count:usize) -> Result<Self, DecodeError> {
         let elements = Self::new(buf)?;
         ensure!(elements.inner.count() == expected_count, errors::TupleSizeMismatch);
         Ok(elements)
     }
 
-    pub fn read(&mut self) -> Result<&[u8], DecodeError> {
-        self.inner.read_array_like_element()
+    pub fn read(&mut self) -> Result<Input, DecodeError> {
+        Ok(Input(Some(self.inner.read_array_like_element()?)))
     }    
 }
 
-pub struct DecodeArrayLike<'t> {
+pub(crate) struct DecodeArrayLike<'t> {
     inner:DecodeCompositeInner<'t>
 }
 
 impl<'t> DecodeArrayLike<'t> {
-    pub fn new_array(buf:&'t [u8]) -> Result<Self, DecodeError> {
-        let inner = DecodeCompositeInner::read_array_like_header(buf, || errors::InvalidArrayShape.fail::<()>().err().unwrap())?;
+    pub fn new_array(buf:Input<'t>) -> Result<Self, DecodeError> {
+        let inner = DecodeCompositeInner::read_array_like_header(buf.bytes()?, || errors::InvalidArrayShape.fail::<()>().err().unwrap())?;
         Ok(DecodeArrayLike{inner})
     }    
 
-    pub fn new_set(buf:&'t [u8]) -> Result<Self, DecodeError> {
-        let inner = DecodeCompositeInner::read_array_like_header(buf, || errors::InvalidSetShape.fail::<()>().err().unwrap())?;
+    pub fn new_set(buf:Input<'t>) -> Result<Self, DecodeError> {
+        let inner = DecodeCompositeInner::read_array_like_header(buf.bytes()?, || errors::InvalidSetShape.fail::<()>().err().unwrap())?;
         Ok(DecodeArrayLike{inner})
     }
 
-    pub fn new(buf:&'t [u8]) -> Result<Self, DecodeError> {
-        let inner = DecodeCompositeInner::read_array_like_header(buf, || errors::InvalidArrayOrSetShape.fail::<()>().err().unwrap())?;
+    pub fn new(buf:Input<'t>) -> Result<Self, DecodeError> {
+        let inner = DecodeCompositeInner::read_array_like_header(buf.bytes()?, || errors::InvalidArrayOrSetShape.fail::<()>().err().unwrap())?;
         Ok(DecodeArrayLike{inner})
     }
 }
 
 impl<'t> Iterator for DecodeArrayLike<'t> {
-    type Item = Result<&'t [u8], DecodeError>;
+    type Item = Result<Input<'t>, DecodeError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.len() > 0 {
-            Some(self.inner.read_array_like_element())
+            Some(self.inner.read_array_like_element().map(|b|Input(Some(b))))
         } else {
             None
         }

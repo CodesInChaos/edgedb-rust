@@ -17,7 +17,7 @@ use edgedb_protocol::client_message::ClientMessage;
 use edgedb_protocol::client_message::{Prepare, IoFormat, Cardinality};
 use edgedb_protocol::client_message::{DescribeStatement, DescribeAspect};
 use edgedb_protocol::client_message::{Execute, ExecuteScript};
-use edgedb_protocol::codec::Codec;
+use edgedb_protocol::value_codec::Codec;
 use edgedb_protocol::server_message::ServerMessage;
 use edgedb_protocol::server_message::{TransactionState};
 use edgedb_protocol::queryable::{Queryable};

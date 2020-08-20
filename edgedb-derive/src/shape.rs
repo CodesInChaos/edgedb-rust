@@ -116,10 +116,10 @@ pub fn derive_struct(s: &syn::ItemStruct) -> syn::Result<TokenStream> {
     let expanded = quote! {
         impl #impl_generics ::edgedb_protocol::queryable::Queryable
             for #name #ty_generics {
-            fn decode(buf: &[u8])
+            fn decode(input: ::edgedb_protocol::serialization::Input)
                 -> Result<Self, ::edgedb_protocol::errors::DecodeError>
             {
-                let mut elements = edgedb_protocol::serialization::decode::DecodeTupleLike::new_object(buf, #nfields)?;
+                let mut elements = ::edgedb_protocol::serialization::decode_composite::DecodeTupleLike::new_object(input, #nfields)?;
 
                 #typeid_block
                 #id_block

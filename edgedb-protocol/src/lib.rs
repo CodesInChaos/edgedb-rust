@@ -7,6 +7,6 @@ pub mod errors;
 pub mod error_response;
 pub mod descriptors;
 pub mod value;
-pub mod codec;
+pub mod value_codec;
 pub mod queryable;
 pub mod model;

@@ -2,201 +2,80 @@ use std::any::type_name;
 use std::convert::{TryInto, TryFrom};
 use std::fmt;
 use std::str;
-use std::time::{UNIX_EPOCH, SystemTime};
 use std::sync::Arc;
 use std::collections::HashSet;
-use std::ops::Deref;
 
-use bytes::{BytesMut, BufMut};
 use uuid::Uuid as UuidVal;
 use snafu::{ensure, OptionExt};
 
 use crate::descriptors::{self, Descriptor, TypePos};
 use crate::errors::{self, CodecError, DecodeError, EncodeError};
-use crate::value::Value;
-use crate::model;
-use crate::serialization::decode::{RawCodec, DecodeTupleLike, DecodeArrayLike, DecodeInputTuple};
-
-pub const STD_UUID: UuidVal = UuidVal::from_u128(0x100);
-pub const STD_STR: UuidVal = UuidVal::from_u128(0x101);
-pub const STD_BYTES: UuidVal = UuidVal::from_u128(0x102);
-pub const STD_INT16: UuidVal = UuidVal::from_u128(0x103);
-pub const STD_INT32: UuidVal = UuidVal::from_u128(0x104);
-pub const STD_INT64: UuidVal = UuidVal::from_u128(0x105);
-pub const STD_FLOAT32: UuidVal = UuidVal::from_u128(0x106);
-pub const STD_FLOAT64: UuidVal = UuidVal::from_u128(0x107);
-pub const STD_DECIMAL: UuidVal = UuidVal::from_u128(0x108);
-pub const STD_BOOL: UuidVal = UuidVal::from_u128(0x109);
-pub const STD_DATETIME: UuidVal = UuidVal::from_u128(0x10a);
-pub const CAL_LOCAL_DATETIME: UuidVal = UuidVal::from_u128(0x10b);
-pub const CAL_LOCAL_DATE: UuidVal = UuidVal::from_u128(0x10c);
-pub const CAL_LOCAL_TIME: UuidVal = UuidVal::from_u128(0x10d);
-pub const STD_DURATION: UuidVal = UuidVal::from_u128(0x10e);
-pub const STD_JSON: UuidVal = UuidVal::from_u128(0x10f);
-pub const STD_BIGINT: UuidVal = UuidVal::from_u128(0x110);
+use crate::value::{Value, NamedTupleShape, ObjectShape, ObjectShapeInfo, NamedTupleShapeInfo, ShapeElement, TupleElement, EnumValue};
+use crate::serialization::decode_composite::{DecodeTupleLike, DecodeArrayLike, DecodeInputTuple};
+use crate::serialization::{Codec as _, ScalarCodec, Input, Output};
+use crate::serialization::type_ids::*;
 
 
 pub trait Codec: fmt::Debug + Send + Sync + 'static {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError>;
-    fn encode(&self, buf: &mut BytesMut, value: &Value)
+    fn decode(&self, input: Input) -> Result<Value, DecodeError>;
+    fn encode(&self, output: &mut Output, value: &Value)
         -> Result<(), EncodeError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnumValue(Arc<str>);
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ObjectShape(Arc<ObjectShapeInfo>);
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NamedTupleShape(Arc<NamedTupleShapeInfo>);
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ObjectShapeInfo {
-    pub elements: Vec<ShapeElement>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ShapeElement {
-    pub flag_implicit: bool,
-    pub flag_link_property: bool,
-    pub flag_link: bool,
-    pub name: String,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct NamedTupleShapeInfo {
-    pub elements: Vec<TupleElement>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct TupleElement {
-    pub name: String,
-}
+#[derive(Debug)]
+struct Nothing;
 
 #[derive(Debug)]
-pub struct Uuid;
-
-#[derive(Debug)]
-pub struct Int16;
-
-#[derive(Debug)]
-pub struct Int32;
-
-#[derive(Debug)]
-pub struct Int64;
-
-#[derive(Debug)]
-pub struct Float32;
-
-#[derive(Debug)]
-pub struct Float64;
-
-#[derive(Debug)]
-pub struct Str;
-
-#[derive(Debug)]
-pub struct Bytes;
-
-#[derive(Debug)]
-pub struct Duration;
-
-#[derive(Debug)]
-pub struct Datetime;
-
-#[derive(Debug)]
-pub struct LocalDatetime;
-
-#[derive(Debug)]
-pub struct LocalDate;
-
-#[derive(Debug)]
-pub struct LocalTime;
-
-#[derive(Debug)]
-pub struct Decimal;
-
-#[derive(Debug)]
-pub struct BigInt;
-
-#[derive(Debug)]
-pub struct Bool;
-
-#[derive(Debug)]
-pub struct Json;
-
-#[derive(Debug)]
-pub struct Nothing;
-
-#[derive(Debug)]
-pub struct Object {
+struct Object {
     shape: ObjectShape,
     codecs: Vec<Arc<dyn Codec>>,
 }
 
 #[derive(Debug)]
-pub struct Set {
+struct Set {
     element: Arc<dyn Codec>,
 }
 
 #[derive(Debug)]
-pub struct Scalar {
+struct Scalar {
     inner: Arc<dyn Codec>,
 }
 
 #[derive(Debug)]
-pub struct Tuple {
+struct Tuple {
     elements: Vec<Arc<dyn Codec>>,
 }
 
 #[derive(Debug)]
-pub struct InputTuple {
+struct InputTuple {
     elements: Vec<Arc<dyn Codec>>,
 }
 
 #[derive(Debug)]
-pub struct NamedTuple {
+struct NamedTuple {
     shape: NamedTupleShape,
     codecs: Vec<Arc<dyn Codec>>,
 }
 
 #[derive(Debug)]
-pub struct InputNamedTuple {
+struct InputNamedTuple {
     shape: NamedTupleShape,
     codecs: Vec<Arc<dyn Codec>>,
 }
 
 #[derive(Debug)]
-pub struct Array {
+struct Array {
     element: Arc<dyn Codec>,
 }
 
 #[derive(Debug)]
-pub struct Enum {
+struct Enum {
     members: HashSet<Arc<str>>,
 }
 
 struct CodecBuilder<'a> {
     input: bool,
     descriptors: &'a [Descriptor],
-}
-
-impl ObjectShape {
-    pub fn new(elements: Vec<ShapeElement>) -> ObjectShape {
-        ObjectShape(Arc::new(ObjectShapeInfo { elements }))
-    }
-}
-
-impl Deref for ObjectShape {
-    type Target = ObjectShapeInfo;
-    fn deref(&self) -> &ObjectShapeInfo {
-        &*self.0
-    }
-}
-
-impl Deref for NamedTupleShape {
-    type Target = NamedTupleShapeInfo;
-    fn deref(&self) -> &NamedTupleShapeInfo {
-        &*self.0
-    }
 }
 
 impl<'a> CodecBuilder<'a> {
@@ -286,163 +165,50 @@ pub fn scalar_codec(uuid: &UuidVal) -> Result<Arc<dyn Codec>, CodecError> {
     }
 }
 
-impl Codec for Int32 {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Int32)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let &val = match val {
-            Value::Int32(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(4);
-        buf.put_i32(val);
-        Ok(())
-    }
+macro_rules! implement_scalar_codec {
+    ( $name:ident ) => (
+        #[derive(Debug)]
+        struct $name;
+
+        impl Codec for $name {
+            fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
+                ScalarCodec::default().decode(buf).map(Value::$name)
+            }
+            fn encode(&self, output: &mut Output, val: &Value)
+                -> Result<(), EncodeError>
+            {
+                match val {
+                    Value::$name(val) => ScalarCodec::default().encode(output, val),
+                    _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
+                }
+            }
+        }
+    )
 }
 
-impl Codec for Int16 {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Int16)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let &val = match val {
-            Value::Int16(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(2);
-        buf.put_i16(val);
-        Ok(())
-    }
-}
-
-impl Codec for Int64 {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Int64)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let &val = match val {
-            Value::Int64(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(8);
-        buf.put_i64(val);
-        Ok(())
-    }
-}
-
-impl Codec for Float32 {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Float32)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let &val = match val {
-            Value::Float32(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(4);
-        buf.put_f32(val);
-        Ok(())
-    }
-}
-
-impl Codec for Float64 {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Float64)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let &val = match val {
-            Value::Float64(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(8);
-        buf.put_f64(val);
-        Ok(())
-    }
-}
-
-impl Codec for Str {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Str)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::Str(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.extend(val.as_bytes());
-        Ok(())
-    }
-}
-
-impl Codec for Bytes {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Bytes)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::Bytes(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.extend(val);
-        Ok(())
-    }
-}
-
-impl Codec for Duration {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Duration)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::Duration(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(16);
-        buf.put_i64(val.micros);
-        buf.put_u32(0);
-        buf.put_u32(0);
-        Ok(())
-    }
-}
-
-impl Codec for Uuid {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Uuid)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let &val = match val {
-            Value::Uuid(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.extend(val.as_bytes());
-        Ok(())
-    }
-}
+implement_scalar_codec!{ Int16 }
+implement_scalar_codec!{ Int32 }
+implement_scalar_codec!{ Int64 }
+implement_scalar_codec!{ Float32 }
+implement_scalar_codec!{ Float64 }
+implement_scalar_codec!{ Str }
+implement_scalar_codec!{ Bytes }
+implement_scalar_codec!{ Duration }
+implement_scalar_codec!{ Uuid }
+implement_scalar_codec!{ Decimal }
+implement_scalar_codec!{ BigInt }
+implement_scalar_codec!{ Bool }
+implement_scalar_codec!{ Datetime }
+implement_scalar_codec!{ LocalDatetime }
+implement_scalar_codec!{ LocalDate }
+implement_scalar_codec!{ LocalTime }
+implement_scalar_codec!{ Json }
 
 impl Codec for Nothing {
-    fn decode(&self, _buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, _buf: Input) -> Result<Value, DecodeError> {
         Ok(Value::Nothing)
     }
-    fn encode(&self, _buf: &mut BytesMut, val: &Value)
+    fn encode(&self, _output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         match val {
@@ -525,7 +291,7 @@ fn decode_input_tuple<'t>(mut elements:DecodeInputTuple, codecs:&Vec<Arc<dyn Cod
 fn decode_tuple<'t>(mut elements:DecodeTupleLike, codecs:&Vec<Arc<dyn Codec>>) -> Result<Vec<Value>, DecodeError>{
     codecs
         .iter()
-        .map(|codec| codec.decode(elements.read()?.ok_or_else(|| errors::MissingRequiredElement.fail::<()>().err().unwrap())?))
+        .map(|codec| codec.decode(elements.read()?))
         .collect::<Result<Vec<Value>, DecodeError>>()
 }
 
@@ -536,11 +302,11 @@ fn decode_array_like<'t>(elements: DecodeArrayLike<'t>, codec:&dyn Codec) -> Res
 }
 
 impl Codec for Object {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         let mut elements = DecodeTupleLike::new_object(buf, self.codecs.len())?;
         let fields = self.codecs
             .iter()
-            .map(|codec| elements.read()?.map(|element| codec.decode(element)).transpose())
+            .map(|codec| codec.decode(elements.read()?).map(|element| Some(element)))
             .collect::<Result<Vec<Option<Value>>, DecodeError>>()?;
 
         Ok(Value::Object {
@@ -548,7 +314,7 @@ impl Codec for Object {
             fields,
         })
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         let (shape, fields) = match val {
@@ -622,19 +388,6 @@ impl<'a> From<&'a [descriptors::TupleElement]> for NamedTupleShape {
     }
 }
 
-impl From<&str> for EnumValue {
-    fn from(s: &str) -> EnumValue {
-        EnumValue(s.into())
-    }
-}
-
-impl std::ops::Deref for EnumValue {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &*self.0
-    }
-}
-
 impl Set {
     fn build(d: &descriptors::SetDescriptor, dec: &CodecBuilder)
         -> Result<Set, CodecError>
@@ -646,12 +399,12 @@ impl Set {
 }
 
 impl Codec for Set {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         let elements = DecodeArrayLike::new_set(buf)?;
         let items = decode_array_like(elements, &*self.element)?;
         Ok(Value::Set(items))
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         let items = match val {
@@ -686,193 +439,24 @@ impl Codec for Set {
     }
 }
 
-impl Codec for Decimal {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Decimal)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::Decimal(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(8 + val.digits.len()*2);
-        buf.put_u16(val.digits.len().try_into().ok()
-                .context(errors::BigIntTooLong)?);
-        buf.put_i16(val.weight);
-        buf.put_u16(if val.negative { 0x4000 } else { 0x0000 });
-        buf.put_u16(val.decimal_digits);
-        for &dig in &val.digits {
-            buf.put_u16(dig);
-        }
-        Ok(())
-    }
-}
-
-impl Codec for BigInt {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::BigInt)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::BigInt(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(8 + val.digits.len()*2);
-        buf.put_u16(val.digits.len().try_into().ok()
-                .context(errors::BigIntTooLong)?);
-        buf.put_i16(val.weight);
-        buf.put_u16(if val.negative { 0x4000 } else { 0x0000 });
-        buf.put_u16(0);
-        for &dig in &val.digits {
-            buf.put_u16(dig);
-        }
-        Ok(())
-    }
-}
-
-impl Codec for Bool {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Bool)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::Bool(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(1);
-        buf.put_u8(match val {
-            true => 1,
-            false => 0,
-        });
-        Ok(())
-    }
-}
-
-impl Codec for Datetime {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::Datetime)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::Datetime(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(8);
-        let postgres_epoch: SystemTime = UNIX_EPOCH +
-            std::time::Duration::from_secs(946684800);
-        if *val >= postgres_epoch {
-            buf.put_i64(val.duration_since(postgres_epoch)
-                .ok().context(errors::DatetimeRange)?
-                .as_micros()
-                .try_into()
-                .ok().context(errors::DatetimeRange)?);
-        } else {
-            let micros: i64 = postgres_epoch.duration_since(*val)
-                .ok().context(errors::DatetimeRange)?
-                .as_micros()
-                .try_into()
-                .ok().context(errors::DatetimeRange)?;
-            buf.put_i64(-micros);
-        }
-        Ok(())
-    }
-}
-
-impl Codec for LocalDatetime {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::LocalDatetime)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::LocalDatetime(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(8);
-        buf.put_i64(val.micros);
-        Ok(())
-    }
-}
-
-impl Codec for LocalDate {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::LocalDate)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::LocalDate(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(4);
-        buf.put_i32(val.days);
-        Ok(())
-    }
-}
-
-impl Codec for LocalTime {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(Value::LocalTime)
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::LocalTime(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(8);
-        buf.put_i64(val.micros);
-        Ok(())
-    }
-}
-
-impl Codec for Json {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        RawCodec::decode(buf).map(|json: model::Json| Value::Json(json.into()))
-    }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
-        -> Result<(), EncodeError>
-    {
-        let val = match val {
-            Value::Json(val) => val,
-            _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        buf.reserve(1 + val.len());
-        buf.put_u8(1);
-        buf.extend(val.as_bytes());
-        Ok(())
-    }
-}
-
 impl Codec for Scalar {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         self.inner.decode(buf)
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
-        self.inner.encode(buf, val)
+        self.inner.encode(output, val)
     }
 }
 
 impl Codec for Tuple {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         let elements = DecodeTupleLike::new_object(buf, self.elements.len())?;
         let items = decode_tuple(elements, &self.elements)?;
         return Ok(Value::Tuple(items))
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         let items = match val {
@@ -900,12 +484,12 @@ impl Codec for Tuple {
 }
 
 impl Codec for InputTuple {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         let elements = DecodeInputTuple::with_count(buf, self.elements.len())?;
         let items = decode_input_tuple(elements, &self.elements)?;
         Ok(Value::Tuple(items))
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         let items = match val {
@@ -932,7 +516,7 @@ impl Codec for InputTuple {
 }
 
 impl Codec for NamedTuple {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         let elements = DecodeTupleLike::new_tuple(buf, self.codecs.len())?;
         let fields = decode_tuple(elements, &self.codecs)?;
         return Ok(Value::NamedTuple {
@@ -940,7 +524,7 @@ impl Codec for NamedTuple {
             fields,
         })
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         let (shape, fields) = match val {
@@ -970,7 +554,7 @@ impl Codec for NamedTuple {
 }
 
 impl Codec for InputNamedTuple {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         let elements = DecodeInputTuple::with_count(buf, self.codecs.len())?;
         let fields = decode_input_tuple(elements, &self.codecs)?;
         Ok(Value::NamedTuple {
@@ -978,7 +562,7 @@ impl Codec for InputNamedTuple {
             fields,
         })
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         let (shape, fields) = match val {
@@ -1007,12 +591,12 @@ impl Codec for InputNamedTuple {
 }
 
 impl Codec for Array {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
         let elements = DecodeArrayLike::new_array(buf)?;
         let items = decode_array_like(elements, &*self.element)?;
         Ok(Value::Array(items))
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
         let items = match val {
@@ -1048,21 +632,21 @@ impl Codec for Array {
 }
 
 impl Codec for Enum {
-    fn decode(&self, buf: &[u8]) -> Result<Value, DecodeError> {
-        let val : &str = RawCodec::decode(buf)?;
+    fn decode(&self, buf: Input) -> Result<Value, DecodeError> {
+        let val : &str = ScalarCodec::default().decode(buf)?;
         let val = self.members.get(val)
             .context(errors::ExtraEnumValue)?;
         Ok(Value::Enum(EnumValue(val.clone())))
     }
-    fn encode(&self, buf: &mut BytesMut, val: &Value)
+    fn encode(&self, output: &mut Output, val: &Value)
         -> Result<(), EncodeError>
     {
-        let val = match val {
-            Value::Enum(val) => val,
+        match val {
+            Value::Enum(val) => {
+                ensure!(self.members.get(&val.0).is_some(), errors::MissingEnumValue);
+                ScalarCodec::default().encode(output, &val.0.as_ref())
+            },
             _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
-        };
-        ensure!(self.members.get(&val.0).is_some(), errors::MissingEnumValue);
-        buf.extend(val.0.as_bytes());
-        Ok(())
+        }
     }
 }

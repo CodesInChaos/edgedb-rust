@@ -18,8 +18,9 @@ use edgedb_protocol::server_message::{ServerMessage, ErrorResponse};
 use edgedb_protocol::server_message::{ReadyForCommand, TransactionState};
 use edgedb_protocol::errors::{DecodeError};
 use edgedb_protocol::queryable::Queryable;
-use edgedb_protocol::codec::Codec;
+use edgedb_protocol::value_codec::Codec;
 use edgedb_protocol::value::Value;
+use edgedb_protocol::serialization::Input;
 
 use crate::client;
 
@@ -80,14 +81,14 @@ impl<T> QueryableDecoder<T> {
 impl<T: Queryable> Decode for QueryableDecoder<T> {
     type Output = T;
     fn decode(&self, msg: Bytes) -> Result<T, DecodeError> {
-        Queryable::decode(&msg)
+        Queryable::decode(Input(Some(&msg)))
     }
 }
 
 impl Decode for Arc<dyn Codec> {
     type Output = Value;
     fn decode(&self, msg: Bytes) -> Result<Self::Output, DecodeError> {
-        (&**self).decode(&msg)
+        (&**self).decode(Input(Some(&msg)))
     }
 }
 

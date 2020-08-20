@@ -8,7 +8,7 @@ use snafu::{ensure, OptionExt};
 use crate::encoding::{Decode};
 use crate::errors::{self, DecodeError, CodecError};
 use crate::errors::{InvalidTypeDescriptor, UnexpectedTypePos};
-use crate::codec::{Codec, build_codec, build_input_codec};
+use crate::value_codec::{Codec, build_codec, build_input_codec};
 use crate::queryable;
 
 

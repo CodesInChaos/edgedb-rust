@@ -1,20 +1,28 @@
-#[derive(Clone, Debug, PartialEq)]
+use crate::model::OutOfRangeError;
+use std::time::SystemTime;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Duration {
     pub(crate) micros: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LocalDatetime {
     pub(crate) micros: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LocalDate {
     pub(crate) days: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LocalTime {
+    pub(crate) micros: i64,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Datetime {
     pub(crate) micros: i64,
 }
 
@@ -65,6 +73,34 @@ impl LocalDate {
     }
 }
 
+impl Datetime {
+    pub fn from_micros(micros: i64) -> Datetime {
+        Datetime { micros }
+    }
+
+    pub(crate) fn to_system_time(self) -> SystemTime {
+        use std::time::{ Duration, UNIX_EPOCH };
+        let postgres_epoch :SystemTime = UNIX_EPOCH + Duration::from_secs(946684800);
+       
+        if self.micros > 0 {
+            postgres_epoch + Duration::from_micros(self.micros as u64)
+        } else {
+            postgres_epoch - Duration::from_micros((-self.micros) as u64)
+        }
+    }
+
+    pub(crate) fn from_system_time(time:SystemTime) -> Result<Datetime, OutOfRangeError> {
+        let min_system_time = Datetime::from_micros(i64::min_value()).to_system_time();
+        let duration = time.duration_since(min_system_time).map_err(|_| OutOfRangeError)?;
+        let micros = duration.as_micros();
+        if micros > u64::max_value() as u128 {
+            return Err(OutOfRangeError);
+        }
+        let micros = (micros + i64::min_value() as u128) as i64;
+        Ok(Datetime::from_micros(micros))
+    }
+}
+
 #[cfg(test)]
 mod test {
     #[test]
@@ -87,7 +123,6 @@ mod test {
 #[cfg(feature = "chrono")]
 mod chrono_interop {
     use super::{LocalDate, LocalDatetime, LocalTime};
-    use crate::model::OutOfRangeError;
     use chrono::naive::{NaiveDate, NaiveDateTime, NaiveTime};
 
     impl std::convert::TryInto<NaiveDateTime> for &LocalDatetime {

@@ -1,15 +1,12 @@
 
-use snafu::{Snafu, ensure};
+use snafu::{Snafu};
 
-use crate::errors::{self, DecodeError};
+use crate::errors::DecodeError;
 use crate::descriptors::{Descriptor, TypePos};
+use crate::serialization::{Input, Codec, ScalarCodec};
 
 pub trait Queryable: Sized {
-    fn decode(buf: &[u8]) -> Result<Self, DecodeError>;
-    fn decode_optional(buf: Option<&[u8]>) -> Result<Self, DecodeError> {
-        ensure!(buf.is_some(), errors::MissingRequiredElement);
-        Self::decode(buf.unwrap())
-    }
+    fn decode(buf: Input) -> Result<Self, DecodeError>;
     fn check_descriptor(ctx: &DescriptorContext, type_pos: TypePos)
         -> Result<(), DescriptorMismatch>;
 }
@@ -71,3 +68,25 @@ impl DescriptorContext<'_> {
         DescriptorMismatch::Expected { expected: expected.into() }
     }
 }
+
+impl<T> Queryable for T
+    where for<'t> ScalarCodec: Codec<'t, T>
+{
+    fn decode(buf: Input) -> Result<Self, DecodeError> {
+        ScalarCodec::default().decode(buf)
+    }
+    fn check_descriptor(ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
+        ScalarCodec::default().check_descriptor(ctx, type_pos)
+    }
+}
+
+// impl<T> Queryable for T
+//     where for<'t> CompositeCodec<DefaultCodec>: Codec<'t, T>
+// {
+//     fn decode(buf: Input) -> Result<Self, DecodeError> {
+//         CompositeCodec::<DefaultCodec>::decode(buf)
+//     }
+//     fn check_descriptor(ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
+//         CompositeCodec::<DefaultCodec>::check_descriptor(ctx, type_pos)
+//     }
+// }

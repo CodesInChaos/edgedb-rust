@@ -3,9 +3,8 @@ use std::{i16, i32, i64};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
-use edgedb_protocol::codec::{build_codec, build_input_codec};
-use edgedb_protocol::codec::{Codec, ObjectShape};
-use edgedb_protocol::value::{Value};
+use edgedb_protocol::value_codec::{Codec, build_codec, build_input_codec};
+use edgedb_protocol::value::{Value, ObjectShape};
 use edgedb_protocol::model::{LocalDatetime, LocalDate, LocalTime, Duration};
 use edgedb_protocol::descriptors::{Descriptor, TypePos};
 use edgedb_protocol::descriptors::BaseScalarTypeDescriptor;
@@ -16,6 +15,7 @@ use edgedb_protocol::descriptors::{TupleTypeDescriptor};
 use edgedb_protocol::descriptors::{NamedTupleTypeDescriptor, TupleElement};
 use edgedb_protocol::descriptors::ArrayTypeDescriptor;
 use edgedb_protocol::descriptors::EnumerationTypeDescriptor;
+use edgedb_protocol::serialization::Input;
 
 mod base;
 
@@ -34,7 +34,7 @@ macro_rules! encoding_eq {
 
 fn decode(codec: &Arc<dyn Codec>, data: &[u8]) -> Result<Value, Box<dyn Error>>
 {
-    Ok(codec.decode(data)?)
+    Ok(codec.decode(Input::new(data))?)
 }
 
 #[test]
