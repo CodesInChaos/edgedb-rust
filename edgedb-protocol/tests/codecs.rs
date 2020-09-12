@@ -2,6 +2,7 @@ use std::error::Error;
 use std::{i16, i32, i64};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
+use std::convert::TryInto;
 
 use edgedb_protocol::value_codec::{Codec, build_codec, build_input_codec};
 use edgedb_protocol::value::{Value, ObjectShape};
@@ -534,7 +535,7 @@ fn datetime() -> Result<(), Box<dyn Error>> {
 
     encoding_eq!(&codec, b"\0\x02=^\x1bTc\xe7",
         Value::Datetime(
-            UNIX_EPOCH + Duration::new(1577109148, 156903000)));
+            (UNIX_EPOCH + Duration::new(1577109148, 156903000)).try_into()?));
     Ok(())
 }
 

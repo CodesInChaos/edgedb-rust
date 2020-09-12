@@ -1,27 +1,27 @@
 use crate::model::OutOfRangeError;
-use std::time::SystemTime;
+use std::{convert::TryFrom, time::SystemTime};
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Duration {
     pub(crate) micros: i64,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LocalDatetime {
     pub(crate) micros: i64,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LocalDate {
     pub(crate) days: i32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LocalTime {
     pub(crate) micros: i64,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Datetime {
     pub(crate) micros: i64,
 }
@@ -78,7 +78,7 @@ impl Datetime {
         Datetime { micros }
     }
 
-    pub(crate) fn to_system_time(self) -> SystemTime {
+    fn to_system_time(self) -> SystemTime {
         use std::time::{ Duration, UNIX_EPOCH };
         let postgres_epoch :SystemTime = UNIX_EPOCH + Duration::from_secs(946684800);
        
@@ -89,7 +89,7 @@ impl Datetime {
         }
     }
 
-    pub(crate) fn from_system_time(time:SystemTime) -> Result<Datetime, OutOfRangeError> {
+    fn from_system_time(time:SystemTime) -> Result<Datetime, OutOfRangeError> {
         let min_system_time = Datetime::from_micros(i64::min_value()).to_system_time();
         let duration = time.duration_since(min_system_time).map_err(|_| OutOfRangeError)?;
         let micros = duration.as_micros();
@@ -98,6 +98,20 @@ impl Datetime {
         }
         let micros = (micros + i64::min_value() as u128) as i64;
         Ok(Datetime::from_micros(micros))
+    }
+}
+
+impl From<Datetime> for SystemTime {
+    fn from(value: Datetime) -> Self {
+        Datetime::to_system_time(value)
+    }
+}
+
+impl TryFrom<SystemTime> for Datetime {
+    type Error = OutOfRangeError;
+
+    fn try_from(value: SystemTime) -> Result<Self, Self::Error> {
+        Datetime::from_system_time(value)
     }
 }
 

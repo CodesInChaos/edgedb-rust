@@ -22,6 +22,7 @@ impl<'t, T, InnerCodec> Codec<'t, Option<T>> for CompositeCodec<InnerCodec>
         self.0.check_descriptor(ctx, type_pos)
     }
     fn encode(&self, output: &mut crate::serialization::Output, val: &Option<T>) -> Result<(), crate::errors::EncodeError> {
+        let _ = (output, val);
         todo!()
     }
 }
@@ -40,6 +41,7 @@ impl<'t, T, InnerCodec> Codec<'t, Vec<T>> for CompositeCodec<InnerCodec>
         <FromIteratorCodec::<&InnerCodec> as Codec<'t, Vec<T>>>::check_descriptor(&inner, ctx, type_pos)
     }
     fn encode(&self, output: &mut crate::serialization::Output, val: &Vec<T>) -> Result<(), crate::errors::EncodeError> {
+        let _ = (output, val);
         todo!()
     }
 }

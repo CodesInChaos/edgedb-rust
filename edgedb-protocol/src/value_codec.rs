@@ -1,5 +1,4 @@
 use std::any::type_name;
-use std::convert::{TryInto, TryFrom};
 use std::fmt;
 use std::str;
 use std::sync::Arc;
@@ -326,21 +325,13 @@ impl Codec for Object {
         ensure!(self.codecs.len() == fields.len(),
                 errors::ObjectShapeMismatch);
         debug_assert_eq!(self.codecs.len(), shape.0.elements.len());
-        let elements = EncodeTupleLike::new(output);
-
-        elements.finish();
-        buf.reserve(4 + 8*self.codecs.len());
-        buf.put_u32(self.codecs.len().try_into()
-                    .ok().context(errors::TooManyElements)?);
-        for (codec, field) in self.codecs.iter().zip(fields) {
-            elements.write(|output|
-            match field {
-                Some(v) => {
-                    codec.encode(buf, v)?;
+        let mut writer = EncodeTupleLike::new(output);
+        for (codec, item) in self.codecs.iter().zip(fields) {
+            match item {
+                Some(item) => {
+                    writer.write(|element_output| codec.encode(element_output, item))?;
                 }
-                None => {
-                    buf.put_i32(-1);
-                }
+                None => { writer.write_null() }
             }
         }
         Ok(())
@@ -408,29 +399,9 @@ impl Codec for Set {
             Value::Set(items) => items,
             _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
         };
-        if items.is_empty() {
-            buf.reserve(12);
-            buf.put_u32(0);  // ndims
-            buf.put_u32(0);  // reserved0
-            buf.put_u32(0);  // reserved1
-            return Ok(());
-        }
-        buf.reserve(20);
-        buf.put_u32(1);  // ndims
-        buf.put_u32(0);  // reserved0
-        buf.put_u32(0);  // reserved1
-        buf.put_u32(items.len().try_into().ok()
-            .context(errors::ArrayTooLong)?);
-        buf.put_u32(1);  // lower
+        let mut writer = EncodeArrayLike::new(output);
         for item in items {
-            buf.reserve(4);
-            let pos = buf.len();
-            buf.put_u32(0);  // replaced after serializing a value
-            self.element.encode(buf, item)?;
-            let len = buf.len()-pos-4;
-            buf[pos..pos+4].copy_from_slice(&u32::try_from(len)
-                    .ok().context(errors::ElementTooLong)?
-                    .to_be_bytes());
+            writer.write(|element_output| self.element.encode(element_output, item))?;
         }
         Ok(())
     }
@@ -462,19 +433,9 @@ impl Codec for Tuple {
         };
         ensure!(self.elements.len() == items.len(),
             errors::TupleShapeMismatch);
-        buf.reserve(4 + 8*self.elements.len());
-        buf.put_u32(self.elements.len().try_into()
-                    .ok().context(errors::TooManyElements)?);
+        let mut writer = EncodeTupleLike::new(output);
         for (codec, item) in self.elements.iter().zip(items) {
-            buf.reserve(8);
-            buf.put_u32(0);
-            let pos = buf.len();
-            buf.put_u32(0);  // replaced after serializing a value
-            codec.encode(buf, item)?;
-            let len = buf.len()-pos-4;
-            buf[pos..pos+4].copy_from_slice(&u32::try_from(len)
-                    .ok().context(errors::ElementTooLong)?
-                    .to_be_bytes());
+            writer.write(|element_output| codec.encode(element_output, item))?;
         }
         Ok(())
     }
@@ -495,18 +456,9 @@ impl Codec for InputTuple {
         };
         ensure!(self.elements.len() == items.len(),
             errors::TupleShapeMismatch);
-        buf.reserve(4 + 4*self.elements.len());
-        buf.put_u32(self.elements.len().try_into()
-                    .ok().context(errors::TooManyElements)?);
+        let mut writer = EncodeInputTuple::new(output);
         for (codec, item) in self.elements.iter().zip(items) {
-            buf.reserve(4);
-            let pos = buf.len();
-            buf.put_u32(0);  // replaced after serializing a value
-            codec.encode(buf, item)?;
-            let len = buf.len()-pos-4;
-            buf[pos..pos+4].copy_from_slice(&u32::try_from(len)
-                    .ok().context(errors::ElementTooLong)?
-                    .to_be_bytes());
+            writer.write(|element_output| codec.encode(element_output, item))?;
         }
         Ok(())
     }
@@ -533,19 +485,9 @@ impl Codec for NamedTuple {
                 errors::ObjectShapeMismatch);
 
         debug_assert_eq!(self.codecs.len(), shape.0.elements.len());
-        buf.reserve(4 + 8*self.codecs.len());
-        buf.put_u32(self.codecs.len().try_into()
-                    .ok().context(errors::TooManyElements)?);
-        for (codec, field) in self.codecs.iter().zip(fields) {
-            buf.reserve(8);
-            buf.put_u32(0);
-            let pos = buf.len();
-            buf.put_u32(0);  // replaced after serializing a value
-            codec.encode(buf, field)?;
-            let len = buf.len()-pos-4;
-            buf[pos..pos+4].copy_from_slice(&u32::try_from(len)
-                    .ok().context(errors::ElementTooLong)?
-                    .to_be_bytes());
+        let mut writer = EncodeTupleLike::new(output);
+        for (codec, item) in self.codecs.iter().zip(fields) {
+            writer.write(|element_output| codec.encode(element_output, item))?;
         }
         Ok(())
     }
@@ -571,18 +513,9 @@ impl Codec for InputNamedTuple {
         ensure!(self.codecs.len() == fields.len(),
                 errors::ObjectShapeMismatch);
         debug_assert_eq!(self.codecs.len(), shape.0.elements.len());
-        buf.reserve(4 + 8*self.codecs.len());
-        buf.put_u32(self.codecs.len().try_into()
-                    .ok().context(errors::TooManyElements)?);
-        for (codec, field) in self.codecs.iter().zip(fields) {
-            buf.reserve(4);
-            let pos = buf.len();
-            buf.put_u32(0);  // replaced after serializing a value
-            codec.encode(buf, field)?;
-            let len = buf.len()-pos-4;
-            buf[pos..pos+4].copy_from_slice(&u32::try_from(len)
-                    .ok().context(errors::ElementTooLong)?
-                    .to_be_bytes());
+        let mut writer = EncodeInputTuple::new(output);
+        for (codec, item) in self.codecs.iter().zip(fields) {
+            writer.write(|element_output| codec.encode(element_output, item))?;
         }
         Ok(())
     }
@@ -601,29 +534,9 @@ impl Codec for Array {
             Value::Array(items) => items,
             _ => Err(errors::invalid_value(type_name::<Self>(), val))?,
         };
-        if items.is_empty() {
-            buf.reserve(12);
-            buf.put_u32(0);  // ndims
-            buf.put_u32(0);  // reserved0
-            buf.put_u32(0);  // reserved1
-            return Ok(());
-        }
-        buf.reserve(20);
-        buf.put_u32(1);  // ndims
-        buf.put_u32(0);  // reserved0
-        buf.put_u32(0);  // reserved1
-        buf.put_u32(items.len().try_into().ok()
-            .context(errors::ArrayTooLong)?);
-        buf.put_u32(1);  // lower
+        let mut writer = EncodeArrayLike::new(output);
         for item in items {
-            buf.reserve(4);
-            let pos = buf.len();
-            buf.put_u32(0);  // replaced after serializing a value
-            self.element.encode(buf, item)?;
-            let len = buf.len()-pos-4;
-            buf[pos..pos+4].copy_from_slice(&u32::try_from(len)
-                    .ok().context(errors::ElementTooLong)?
-                    .to_be_bytes());
+            writer.write(|element_output| self.element.encode(element_output, item))?;
         }
         Ok(())
     }

@@ -10,7 +10,7 @@ use crate::errors::{self, DecodeError};
 pub use self::codecs::{Codec, DefaultCodec, ScalarCodec, CompositeCodec};
 
 pub struct Input<'t>(pub Option<&'t [u8]>);
-pub struct Output(BytesMut);
+pub type Output = BytesMut;
 
 impl<'t> Input<'t> {
     pub(self) fn bytes(self) -> Result<&'t [u8], DecodeError> {
@@ -20,11 +20,5 @@ impl<'t> Input<'t> {
 
     pub fn new(bytes:&'t [u8]) -> Input<'t> {
         Input(Some(bytes))
-    }
-}
-
-impl Output {
-    pub(crate) fn buf(&mut self) -> &mut BytesMut {
-        &mut self.0
     }
 }

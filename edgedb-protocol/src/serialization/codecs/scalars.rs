@@ -1,6 +1,6 @@
 use std::str;
 use std::mem::size_of;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::time::SystemTime;
 
 use bytes::{Buf, BufMut};
@@ -103,8 +103,7 @@ impl<'t> Codec<'t, Uuid> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_UUID, "uuid")
     }
-    fn encode(&self, output: &mut Output, val: &Uuid) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &Uuid) -> Result<(), errors::EncodeError> {
         buf.reserve(16);
         buf.extend(val.as_bytes());
         Ok(())
@@ -124,8 +123,7 @@ impl<'t> Codec<'t, bool> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_BOOL, "bool")
     }
-    fn encode(&self, output: &mut Output, val: &bool) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &bool) -> Result<(), errors::EncodeError> {
         buf.reserve(1);
         buf.put_u8(match val {
             true => 1,
@@ -143,8 +141,7 @@ impl<'t> Codec<'t, i16> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_INT16, "int16")
     }
-    fn encode(&self, output: &mut Output, val: &i16) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &i16) -> Result<(), errors::EncodeError> {
         buf.reserve(size_of::<i16>());
         buf.put_i16(*val);
         Ok(())
@@ -159,8 +156,7 @@ impl<'t> Codec<'t, i32> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_INT32, "int32")
     }
-    fn encode(&self, output: &mut Output, val: &i32) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &i32) -> Result<(), errors::EncodeError> {
         buf.reserve(size_of::<i32>());
         buf.put_i32(*val);
         Ok(())
@@ -175,8 +171,7 @@ impl<'t> Codec<'t, i64> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_INT64, "int64")
     }
-    fn encode(&self, output: &mut Output, val: &i64) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &i64) -> Result<(), errors::EncodeError> {
         buf.reserve(size_of::<i64>());
         buf.put_i64(*val);
         Ok(())
@@ -191,8 +186,7 @@ impl<'t> Codec<'t, f32> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_FLOAT32, "float32")
     }
-    fn encode(&self, output: &mut Output, val: &f32) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &f32) -> Result<(), errors::EncodeError> {
         buf.reserve(size_of::<f32>());
         buf.put_f32(*val);
         Ok(())
@@ -207,8 +201,7 @@ impl<'t> Codec<'t, f64> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_FLOAT64, "float64")
     }
-    fn encode(&self, output: &mut Output, val: &f64) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &f64) -> Result<(), errors::EncodeError> {
         buf.reserve(size_of::<f64>());
         buf.put_f64(*val);
         Ok(())
@@ -222,8 +215,7 @@ impl<'t> Codec<'t, &'t [u8]> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_BYTES, "bytes")
     }
-    fn encode(&self, output: &mut Output, val: &&'t [u8]) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &&'t [u8]) -> Result<(), errors::EncodeError> {
         buf.extend(*val);
         Ok(())
     }    
@@ -266,8 +258,7 @@ impl<'t> Codec<'t, Decimal> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_DECIMAL, "decimal")
     }
-    fn encode(&self, output: &mut Output, val: &Decimal) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &Decimal) -> Result<(), errors::EncodeError> {
         buf.reserve(8 + val.digits.len()*2);
         buf.put_u16(val.digits.len().try_into().ok()
                 .context(errors::BigIntTooLong)?);
@@ -306,8 +297,7 @@ impl<'t> Codec<'t, BigInt> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_BIGINT, "bigint")
     }
-    fn encode(&self, output: &mut Output, val: &BigInt) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &BigInt) -> Result<(), errors::EncodeError> {
         buf.reserve(8 + val.digits.len()*2);
         buf.put_u16(val.digits.len().try_into().ok()
                 .context(errors::BigIntTooLong)?);
@@ -333,8 +323,7 @@ impl<'t> Codec<'t, Duration> for ScalarCodec {
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_DURATION, "duration")
     }
-    fn encode(&self, output: &mut Output, val: &Duration) -> Result<(), errors::EncodeError> {
-        let buf = output.buf();
+    fn encode(&self, buf: &mut Output, val: &Duration) -> Result<(), errors::EncodeError> {
         buf.reserve(16);
         buf.put_i64(val.micros);
         buf.put_u32(0);
@@ -359,13 +348,13 @@ impl<'t> Codec<'t, Datetime> for ScalarCodec {
 impl<'t> Codec<'t, SystemTime> for ScalarCodec {
     fn decode(&self, input: Input) -> Result<SystemTime, DecodeError> {
         let datetime: Datetime = ScalarCodec::default().decode(input)?;
-        Ok(datetime.to_system_time())
+        Ok(datetime.into())
     }
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_DATETIME, "datetime")
     }
     fn encode(&self, output: &mut Output, val: &SystemTime) -> Result<(), errors::EncodeError> {
-        let datetime = Datetime::from_system_time(*val).ok().context(errors::DatetimeRange)?;
+        let datetime = Datetime::try_from(*val).ok().context(errors::DatetimeRange)?;
         ScalarCodec::default().encode(output, &datetime)
     }
 }

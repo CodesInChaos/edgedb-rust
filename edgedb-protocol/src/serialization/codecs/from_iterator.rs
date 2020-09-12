@@ -35,6 +35,7 @@ impl<'t, T:IntoIterator + FromIterator<<T as IntoIterator>::Item>, InnerCodec> C
         self.0.check_descriptor(ctx, element_type_pos)
     }
     fn encode(&self, output: &mut crate::serialization::Output, val: &T) -> Result<(), crate::errors::EncodeError> {
+        let _ = (output, val);
         todo!()
     } 
 }

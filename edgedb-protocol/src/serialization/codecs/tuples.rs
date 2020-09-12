@@ -13,9 +13,9 @@ macro_rules! implement_tuple {
         {
             fn encode(&self, output: &mut Output, val: &($($name,)+)) -> Result<(), EncodeError> {
                 let mut elements = EncodeTupleLike::new(output);
+                #[allow(non_snake_case)]
                 let ($($name, )+) = val;
                 $(elements.write(|element|<DefaultCodec as Codec<'t, $name>>::encode(&DefaultCodec::default(), element, $name))?;)+
-                elements.finish();
                 Ok(())
             }
 
