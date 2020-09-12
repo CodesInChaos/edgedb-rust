@@ -9,7 +9,7 @@ pub use uuid::Uuid;
 
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct OutOfRangeError;
 
 impl std::error::Error for OutOfRangeError {}

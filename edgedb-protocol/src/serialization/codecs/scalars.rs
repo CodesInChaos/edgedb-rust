@@ -318,14 +318,14 @@ impl<'t> Codec<'t, Duration> for ScalarCodec {
         let days = buf.get_u32();
         let months = buf.get_u32();
         ensure!(months == 0 && days == 0, errors::NonZeroReservedBytes);
-        Ok(Duration { micros })
+        Ok(Duration::from_micros(micros))
     }
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::STD_DURATION, "duration")
     }
     fn encode(&self, buf: &mut Output, val: &Duration) -> Result<(), errors::EncodeError> {
         buf.reserve(16);
-        buf.put_i64(val.micros);
+        buf.put_i64(val.to_micros());
         buf.put_u32(0);
         buf.put_u32(0);
         Ok(())
@@ -341,7 +341,7 @@ impl<'t> Codec<'t, Datetime> for ScalarCodec {
         check_scalar(ctx, type_pos, type_ids::STD_DATETIME, "datetime")
     }
     fn encode(&self, output: &mut Output, val: &Datetime) -> Result<(), errors::EncodeError> {
-        ScalarCodec::default().encode(output, &val.micros)
+        ScalarCodec::default().encode(output, &val.to_micros())
     }
 }
 
@@ -362,39 +362,38 @@ impl<'t> Codec<'t, SystemTime> for ScalarCodec {
 impl<'t> Codec<'t, LocalDatetime> for ScalarCodec {
     fn decode(&self, input: Input) -> Result<LocalDatetime, DecodeError> {
         let micros : i64 = ScalarCodec::default().decode(input)?;
-        Ok(LocalDatetime { micros })
+        Ok(LocalDatetime::from_micros(micros))
     }
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::CAL_LOCAL_DATETIME, "cal::local_datetime")
     }
     fn encode(&self, output: &mut Output, val: &LocalDatetime) -> Result<(), errors::EncodeError> {
-        ScalarCodec::default().encode(output, &val.micros)
+        ScalarCodec::default().encode(output, &val.to_micros())
     }
 }
 
 impl<'t> Codec<'t, LocalDate> for ScalarCodec {
     fn decode(&self, input: Input) -> Result<LocalDate, DecodeError> {
         let days : i32 = ScalarCodec::default().decode(input)?;
-        Ok(LocalDate { days })
+        Ok(LocalDate::from_days(days))
     }
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::CAL_LOCAL_DATE, "cal::local_date")
     }
     fn encode(&self, output: &mut Output, val: &LocalDate) -> Result<(), errors::EncodeError> {
-        ScalarCodec::default().encode(output, &val.days)
+        ScalarCodec::default().encode(output, &val.to_days())
     }
 }
 
 impl<'t> Codec<'t, LocalTime> for ScalarCodec {
     fn decode(&self, input: Input) -> Result<LocalTime, DecodeError> {
         let micros : i64 = ScalarCodec::default().decode(input)?;
-        ensure!(micros >= 0 && micros < 86_400 * 1_000_000, errors::InvalidDate);
-        Ok(LocalTime { micros })
+        LocalTime::try_from_micros(micros as u64).ok().context(errors::InvalidDate)
     }
     fn check_descriptor(&self, ctx: &DescriptorContext, type_pos: TypePos) -> Result<(), DescriptorMismatch> {
         check_scalar(ctx, type_pos, type_ids::CAL_LOCAL_TIME, "cal::local_time")
     }
     fn encode(&self, output: &mut Output, val: &LocalTime) -> Result<(), errors::EncodeError> {
-        ScalarCodec::default().encode(output, &val.micros)
+        ScalarCodec::default().encode(output, &(val.to_micros() as i64))
     }
 }
