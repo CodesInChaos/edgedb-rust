@@ -13,7 +13,7 @@ pub use composite::CompositeCodec;
 pub use scalars::ScalarCodec;
 use from_iterator::FromIteratorCodec;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DefaultCodec;
 
 pub trait Codec<'t, T>: std::fmt::Debug + Send + Sync {

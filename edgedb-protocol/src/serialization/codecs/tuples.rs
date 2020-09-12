@@ -1,12 +1,24 @@
-use crate::queryable::{Queryable, DescriptorContext, DescriptorMismatch};
-use crate::errors::DecodeError;
+use crate::queryable::{ Queryable, DescriptorContext, DescriptorMismatch};
+use crate::errors::{EncodeError, DecodeError};
 use crate::descriptors::{Descriptor, TypePos};
 use crate::serialization::decode_composite::DecodeTupleLike;
-use crate::serialization::{Input, Codec, ScalarCodec};
+use crate::serialization::encode_composite::EncodeTupleLike;
+use crate::serialization::{Input, Output, Codec, ScalarCodec, DefaultCodec};
+use std::default::Default;
 
 macro_rules! implement_tuple {
     ( $count:expr, $($name:ident,)+ ) => (
-        impl<'t, $($name:Queryable),+> Codec<'t, ($($name,)+)> for ScalarCodec {
+        impl<'t, $($name,)+> Codec<'t, ($($name,)+)> for ScalarCodec
+            where $($name:Queryable,)+
+        {
+            fn encode(&self, output: &mut Output, val: &($($name,)+)) -> Result<(), EncodeError> {
+                let mut elements = EncodeTupleLike::new(output);
+                let ($($name, )+) = val;
+                $(elements.write(|element|<DefaultCodec as Codec<'t, $name>>::encode(&DefaultCodec::default(), element, $name))?;)+
+                elements.finish();
+                Ok(())
+            }
+
             fn decode(&self, buf: Input) -> Result<($($name,)+), DecodeError> {
                 let mut elements = DecodeTupleLike::new_tuple(buf, $count)?;
                 Ok((

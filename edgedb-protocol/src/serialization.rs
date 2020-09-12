@@ -1,4 +1,5 @@
 pub mod decode_composite;
+pub mod encode_composite;
 pub mod codecs;
 pub(crate) mod type_ids;
 use snafu::ensure;

@@ -12,6 +12,7 @@ use crate::descriptors::{self, Descriptor, TypePos};
 use crate::errors::{self, CodecError, DecodeError, EncodeError};
 use crate::value::{Value, NamedTupleShape, ObjectShape, ObjectShapeInfo, NamedTupleShapeInfo, ShapeElement, TupleElement, EnumValue};
 use crate::serialization::decode_composite::{DecodeTupleLike, DecodeArrayLike, DecodeInputTuple};
+use crate::serialization::encode_composite::{EncodeTupleLike, EncodeArrayLike, EncodeInputTuple};
 use crate::serialization::{Codec as _, ScalarCodec, Input, Output};
 use crate::serialization::type_ids::*;
 
@@ -325,21 +326,17 @@ impl Codec for Object {
         ensure!(self.codecs.len() == fields.len(),
                 errors::ObjectShapeMismatch);
         debug_assert_eq!(self.codecs.len(), shape.0.elements.len());
+        let elements = EncodeTupleLike::new(output);
+
+        elements.finish();
         buf.reserve(4 + 8*self.codecs.len());
         buf.put_u32(self.codecs.len().try_into()
                     .ok().context(errors::TooManyElements)?);
         for (codec, field) in self.codecs.iter().zip(fields) {
-            buf.reserve(8);
-            buf.put_u32(0);
+            elements.write(|output|
             match field {
                 Some(v) => {
-                    let pos = buf.len();
-                    buf.put_i32(0);  // replaced after serializing a value
                     codec.encode(buf, v)?;
-                    let len = buf.len()-pos-4;
-                    buf[pos..pos+4].copy_from_slice(&i32::try_from(len)
-                            .ok().context(errors::ElementTooLong)?
-                            .to_be_bytes());
                 }
                 None => {
                     buf.put_i32(-1);
@@ -534,6 +531,7 @@ impl Codec for NamedTuple {
         ensure!(shape == &self.shape, errors::TupleShapeMismatch);
         ensure!(self.codecs.len() == fields.len(),
                 errors::ObjectShapeMismatch);
+
         debug_assert_eq!(self.codecs.len(), shape.0.elements.len());
         buf.reserve(4 + 8*self.codecs.len());
         buf.put_u32(self.codecs.len().try_into()

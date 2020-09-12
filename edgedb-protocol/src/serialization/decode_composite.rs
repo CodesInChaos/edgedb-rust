@@ -141,12 +141,12 @@ mod inner {
             DecodeCompositeInner { raw:bytes, count }
         }
 
-        fn read_element(&mut self, position:usize) -> Result<&'t [u8], DecodeError> {
+        fn read_element(&mut self, len:usize) -> Result<&'t [u8], DecodeError> {
             assert!(self.count() > 0, "reading from a finished elements sequence");
             self.count -= 1;
-            ensure!(self.raw.len() >= position, self.underflow());
-            let result = &self.raw[..position];
-            self.raw.advance(position);
+            ensure!(self.raw.len() >= len, self.underflow());
+            let result = &self.raw[..len];
+            self.raw.advance(len);
             ensure!(self.count > 0 || self.raw.len() == 0, errors::ExtraData);
             Ok(result)
         }
